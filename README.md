@@ -9,6 +9,9 @@ A simple Android home-screen launcher (Kotlin + Jetpack Compose), built automati
 - 4-column app grid, sorted A–Z, shows the phone wallpaper behind it
 - Tap to open an app, long-press for App Info (uninstall, permissions)
 - Refreshes the app list whenever you return Home
+- 6 built-in black & white wallpapers (silk waves, bubbles, particles, eclipse leaf, lotus) — tap the ⚙ icon or long-press the clock to switch; option to use the phone's own wallpaper, or also apply to the lock screen
+
+To add more wallpapers: put a portrait `.jpg` (about 1080×2340) in `app/src/main/res/drawable-nodpi/` with a lowercase name like `wp_myname.jpg`, then add one line to `BUILT_IN_WALLPAPERS` in `Wallpapers.kt`.
 
 ## Get the APK
 1. Push this folder to a GitHub repository (branch `main`).

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Lets the launcher also set the lock screen wallpaper -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+
     <!-- Needed on Android 11+ to see the list of installed apps -->
     <queries>
         <intent>
