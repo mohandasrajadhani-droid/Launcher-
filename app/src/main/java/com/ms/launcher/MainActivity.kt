@@ -1,325 +1,200 @@
 package com.ms.launcher
 
+import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.Intent
+import android.content.pm.LauncherApps
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
-import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
+import android.os.UserHandle
+import android.provider.MediaStore
+import android.provider.Telephony
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-data class AppInfo(
-    val label: String,
-    val packageName: String,
-    val icon: ImageBitmap
-)
 
 class MainActivity : ComponentActivity() {
 
-    // Bumped every time the launcher comes back to the front,
-    // so newly installed / removed apps show up.
-    private var refreshKey by mutableIntStateOf(0)
+    lateinit var repo: AppRepository; private set
+    lateinit var store: LauncherStore; private set
+    lateinit var awm: AppWidgetManager; private set
+    lateinit var widgetHost: AppWidgetHost; private set
+
+    /** Bumped when Home is pressed while the launcher is already showing. */
+    var homeTick by mutableIntStateOf(0); private set
+    /** Bumped every time the launcher comes back to the front. */
+    var resumeTick by mutableIntStateOf(0); private set
+
+    private var pendingWidget: Pair<Int, AppWidgetProviderInfo>? = null
+
+    private val pkgCallback = object : LauncherApps.Callback() {
+        override fun onPackageRemoved(packageName: String, user: UserHandle) = changed(packageName)
+        override fun onPackageAdded(packageName: String, user: UserHandle) = changed(packageName)
+        override fun onPackageChanged(packageName: String, user: UserHandle) = changed(packageName)
+        override fun onPackagesAvailable(packageNames: Array<String>, user: UserHandle, replacing: Boolean) =
+            packageNames.forEach { changed(it) }
+        override fun onPackagesUnavailable(packageNames: Array<String>, user: UserHandle, replacing: Boolean) =
+            packageNames.forEach { changed(it) }
+    }
+
+    private fun changed(pkg: String) {
+        repo.invalidate(pkg)
+        lifecycleScope.launch { repo.refresh() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
+        repo = AppRepository(this)
+        store = LauncherStore.get(this)
+        awm = AppWidgetManager.getInstance(this)
+        widgetHost = AppWidgetHost(this, HOST_ID)
+        repo.la.registerCallback(pkgCallback, Handler(Looper.getMainLooper()))
+
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                LauncherScreen(
-                    refreshKey = refreshKey,
-                    loadApps = { loadApps() },
-                    onOpen = { openApp(it) },
-                    onInfo = { openAppInfo(it) }
-                )
-            }
+            MaterialTheme(colorScheme = darkColorScheme()) { LauncherRoot(this) }
         }
+        lifecycleScope.launch { repo.refresh(); ensureDefaults() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        try { widgetHost.startListening() } catch (_: Exception) {}
+    }
+
+    override fun onStop() {
+        super.onStop()
+        try { widgetHost.stopListening() } catch (_: Exception) {}
     }
 
     override fun onResume() {
         super.onResume()
-        refreshKey++
+        resumeTick++
+        lifecycleScope.launch { repo.refresh() }
     }
 
-    private fun loadApps(): List<AppInfo> {
-        val pm = packageManager
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        @Suppress("DEPRECATION")
-        return pm.queryIntentActivities(intent, 0)
-            .filter { it.activityInfo.packageName != packageName }
-            .map {
-                AppInfo(
-                    label = it.loadLabel(pm).toString(),
-                    packageName = it.activityInfo.packageName,
-                    icon = it.loadIcon(pm).toBitmap(128, 128).asImageBitmap()
-                )
-            }
-            .distinctBy { it.packageName }
-            .sortedBy { it.label.lowercase() }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        homeTick++
     }
 
-    private fun openApp(app: AppInfo) {
-        packageManager.getLaunchIntentForPackage(app.packageName)?.let { startActivity(it) }
+    override fun onDestroy() {
+        try { repo.la.unregisterCallback(pkgCallback) } catch (_: Exception) {}
+        super.onDestroy()
     }
 
-    private fun openAppInfo(app: AppInfo) {
-        startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                .setData(Uri.parse("package:${app.packageName}"))
-        )
-    }
-}
+    // ---------------- first run: fill dock + a few home icons ----------------
+    fun ensureDefaults() {
+        if (store.initialized || repo.apps.isEmpty()) return
+        val mine = repo.apps.filter { !it.isWork }
+        fun byPkg(vararg p: String) = p.firstNotNullOfOrNull { pk -> mine.firstOrNull { it.packageName == pk } }
+        fun byIntent(i: Intent) = try {
+            packageManager.resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+                ?.let { pk -> mine.firstOrNull { it.packageName == pk } }
+        } catch (e: Exception) { null }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
-@Composable
-fun LauncherScreen(
-    refreshKey: Int,
-    loadApps: () -> List<AppInfo>,
-    onOpen: (AppInfo) -> Unit,
-    onInfo: (AppInfo) -> Unit
-) {
-    val ctx = LocalContext.current
-    var apps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
-    var query by remember { mutableStateOf("") }
-    var now by remember { mutableStateOf(Date()) }
-    var wallpaperId by remember { mutableStateOf(WallpaperPrefs.get(ctx)) }
-    var showPicker by remember { mutableStateOf(false) }
+        val dock = listOfNotNull(
+            byIntent(Intent(Intent.ACTION_DIAL)) ?: byPkg("com.samsung.android.dialer", "com.google.android.dialer"),
+            byPkg(Telephony.Sms.getDefaultSmsPackage(this) ?: "", "com.samsung.android.messaging", "com.google.android.apps.messaging"),
+            byPkg("com.whatsapp", "com.whatsapp.w4b"),
+            byIntent(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")))
+                ?: byPkg("com.android.chrome", "com.sec.android.app.sbrowser"),
+            byIntent(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA))
+                ?: byPkg("com.sec.android.app.camera", "com.google.android.GoogleCamera"),
+        ).distinctBy { it.key }.take(store.settings.dockSlots)
 
-    // Home screen must never close on Back
-    BackHandler { query = "" }
+        val home = listOfNotNull(
+            byPkg("com.sec.android.gallery3d", "com.google.android.apps.photos"),
+            byPkg("com.android.vending"),
+            byPkg("com.google.android.youtube"),
+            byPkg("com.google.android.gm"),
+            byPkg("com.google.android.apps.maps"),
+            byPkg("com.samsung.android.calendar", "com.google.android.calendar"),
+            byPkg("com.sec.android.app.popupcalculator", "com.google.android.calculator"),
+            byPkg("com.android.settings"),
+        ).filter { h -> dock.none { it.key == h.key } }.distinctBy { it.key }
 
-    LaunchedEffect(refreshKey) {
-        apps = withContext(Dispatchers.Default) { loadApps() }
-    }
-    LaunchedEffect(Unit) {
-        while (true) { now = Date(); delay(10_000) }
-    }
-
-    val filtered = remember(apps, query) {
-        if (query.isBlank()) apps
-        else apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
-    }
-
-    // Load the chosen background (null = use phone's system wallpaper)
-    val selected = BUILT_IN_WALLPAPERS.firstOrNull { it.id == wallpaperId }
-    val background by produceState<ImageBitmap?>(null, selected) {
-        value = selected?.let { w -> withContext(Dispatchers.IO) { loadWallpaperBitmap(ctx, w.res, 1) } }
+        dock.forEachIndexed { i, a -> store.placeAt(HomeItem.App(newId(), a.key), DOCK, i) }
+        val s = store.settings
+        val start = (s.rows - 2).coerceAtLeast(0) * s.columns
+        home.take(2 * s.columns).forEachIndexed { i, a -> store.placeAt(HomeItem.App(newId(), a.key), 0, start + i) }
+        store.markInitialized()
     }
 
-    Box(Modifier.fillMaxSize()) {
-        background?.let {
-            Image(it, contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize())
-        }
-
-        Column(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = if (selected == null) 0.35f else 0.10f))
-                .systemBarsPadding()
-                .padding(horizontal = 16.dp)
-        ) {
-            // Clock + date (long-press to change wallpaper)
-            Row(
-                verticalAlignment = Alignment.Top,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(onClick = {}, onLongClick = { showPicker = true })
-                    .padding(top = 24.dp)
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        SimpleDateFormat("hh:mm", Locale.getDefault()).format(now),
-                        color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Light
-                    )
-                    Text(
-                        SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(now),
-                        color = Color.White.copy(alpha = 0.8f), fontSize = 16.sp
-                    )
-                }
-                IconButton(onClick = { showPicker = true }) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Wallpapers",
-                        tint = Color.White.copy(alpha = 0.8f))
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-
-            // Search
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search apps") },
-                singleLine = true,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = Color.Black.copy(alpha = 0.35f),
-                    focusedContainerColor = Color.Black.copy(alpha = 0.5f)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(16.dp))
-
-            // App grid
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                items(filtered, key = { it.packageName }) { app ->
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.combinedClickable(
-                            onClick = { onOpen(app); query = "" },
-                            onLongClick = { onInfo(app) }
-                        )
-                    ) {
-                        Image(app.icon, contentDescription = app.label, modifier = Modifier.size(52.dp))
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            app.label,
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    if (showPicker) {
-        ModalBottomSheet(onDismissRequest = { showPicker = false }) {
-            WallpaperPicker(
-                currentId = wallpaperId,
-                onPick = { id ->
-                    wallpaperId = id
-                    WallpaperPrefs.set(ctx, id)
-                }
+    // ---------------- widgets ----------------
+    fun startAddWidget(info: AppWidgetProviderInfo) {
+        val id = widgetHost.allocateAppWidgetId()
+        pendingWidget = id to info
+        val bound = try { awm.bindAppWidgetIdIfAllowed(id, info.profile, info.provider, null) } catch (e: Exception) { false }
+        if (bound) configureWidget(id, info)
+        else {
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                Intent(AppWidgetManager.ACTION_APPWIDGET_BIND)
+                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE, info.profile),
+                REQ_BIND
             )
         }
     }
-}
 
-@Composable
-fun WallpaperPicker(currentId: String, onPick: (String) -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val thumbs by produceState<Map<String, ImageBitmap>>(emptyMap()) {
-        value = withContext(Dispatchers.IO) {
-            BUILT_IN_WALLPAPERS.associate { it.id to loadWallpaperBitmap(ctx, it.res, 6) }
+    private fun configureWidget(id: Int, info: AppWidgetProviderInfo) {
+        if (info.configure != null) {
+            try {
+                widgetHost.startAppWidgetConfigureActivityForResult(this, id, 0, REQ_CONFIGURE, null)
+                return
+            } catch (_: Exception) {}
+        }
+        finishWidget(id, info)
+    }
+
+    private fun finishWidget(id: Int, info: AppWidgetProviderInfo) {
+        val h = (info.minHeight / resources.displayMetrics.density).toInt().coerceAtLeast(110) + 16
+        store.addWidget(id, h)
+        pendingWidget = null
+    }
+
+    @Deprecated("Uses the platform widget flow")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val (id, info) = pendingWidget ?: return
+        val ok = resultCode == RESULT_OK
+        when (requestCode) {
+            REQ_BIND -> if (ok) configureWidget(id, info) else dropPending(id)
+            REQ_CONFIGURE -> if (ok) finishWidget(id, info) else dropPending(id)
         }
     }
-    val current = BUILT_IN_WALLPAPERS.firstOrNull { it.id == currentId }
 
-    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
-        Text("Wallpaper", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(12.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(BUILT_IN_WALLPAPERS, key = { it.id }) { w ->
-                val isSel = w.id == currentId
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        Modifier
-                            .size(width = 96.dp, height = 192.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .border(
-                                BorderStroke(if (isSel) 3.dp else 1.dp,
-                                    if (isSel) Color.White else Color.White.copy(alpha = 0.25f)),
-                                RoundedCornerShape(14.dp)
-                            )
-                            .background(Color.Black)
-                            .clickable { onPick(w.id) }
-                    ) {
-                        thumbs[w.id]?.let {
-                            Image(it, contentDescription = w.name, contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize())
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(w.name, fontSize = 12.sp)
-                }
-            }
-            item {
-                val isSel = currentId == SYSTEM_WALLPAPER
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(width = 96.dp, height = 192.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .border(
-                                BorderStroke(if (isSel) 3.dp else 1.dp,
-                                    if (isSel) Color.White else Color.White.copy(alpha = 0.25f)),
-                                RoundedCornerShape(14.dp)
-                            )
-                            .clickable { onPick(SYSTEM_WALLPAPER) }
-                    ) {
-                        Text("Phone\nwallpaper", textAlign = TextAlign.Center, fontSize = 13.sp)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text("System", fontSize = 12.sp)
-                }
-            }
-        }
+    private fun dropPending(id: Int) {
+        try { widgetHost.deleteAppWidgetId(id) } catch (_: Exception) {}
+        pendingWidget = null
+    }
 
-        if (current != null) {
-            Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = {
-                    scope.launch {
-                        val ok = withContext(Dispatchers.IO) {
-                            runCatching { setLockScreenWallpaper(ctx, current.res) }.isSuccess
-                        }
-                        Toast.makeText(ctx,
-                            if (ok) "Lock screen updated" else "Couldn't set lock screen",
-                            Toast.LENGTH_SHORT).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Also use on lock screen") }
-        }
+    fun removeWidget(id: Int) {
+        try { widgetHost.deleteAppWidgetId(id) } catch (_: Exception) {}
+        store.removeWidget(id)
+    }
+
+    companion object {
+        const val HOST_ID = 0x4D53
+        const val REQ_BIND = 11
+        const val REQ_CONFIGURE = 12
     }
 }

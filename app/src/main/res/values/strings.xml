@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MS Launcher</string>
+    <string name="dots_service">MS Launcher notification dots</string>
+    <string name="lock_service">MS Launcher – double-tap to lock</string>
+    <string name="lock_service_desc">Lets MS Launcher lock the screen when you double-tap an empty part of the home screen, and open notifications when you swipe down. It does not read your screen content.</string>
+</resources>
