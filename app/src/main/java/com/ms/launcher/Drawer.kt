@@ -152,6 +152,7 @@ fun AppDrawer(
         Modifier
             .fillMaxSize()
             .background(Color(0xF20E0E10))
+            .pointerInput(Unit) {} // stop touches falling through to the home screen
             .systemBarsPadding()
             .imePadding()
     ) {
