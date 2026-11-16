@@ -12,13 +12,30 @@ android {
         applicationId = "com.ms.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "2.1"
+    }
+
+    // The permanent signing key is NOT in this public repo. GitHub Actions decodes it
+    // from the KEYSTORE_B64 / KEYSTORE_PASSWORD secrets into KEYSTORE_FILE at build time.
+    val keystoreFile = System.getenv("KEYSTORE_FILE")
+    signingConfigs {
+        if (keystoreFile != null) {
+            create("release") {
+                storeFile = file(keystoreFile)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS") ?: "mslauncher"
+                keyPassword = System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Without the secret, fall back to a temporary key so the build still works
+            signingConfig = if (keystoreFile != null) signingConfigs.getByName("release")
+                            else signingConfigs.getByName("debug")
         }
     }
     compileOptions {

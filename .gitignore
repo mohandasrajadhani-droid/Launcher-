@@ -3,3 +3,7 @@ build/
 *.iml
 local.properties
 .idea/
+
+# Signing keys must never be committed
+*.jks
+*.keystore
