@@ -22,7 +22,19 @@ for apk in "$@"; do
   echo "$mf" | grep -q "android:debuggable(0x0101000f)=(type 0x12)0xffffffff" && check fail "APK is debuggable" || check ok "Not debuggable"
   echo "$mf" | grep -q "android:allowBackup(0x01010280)=(type 0x12)0x0" && check ok "Backup disabled" || check fail "allowBackup is not false"
   echo "$mf" | grep -q "android:usesCleartextTraffic(0x010104ec)=(type 0x12)0xffffffff" && check fail "Cleartext traffic allowed" || check ok "No cleartext traffic flag"
-  echo "$mf" | grep -qE "E: provider|E: receiver" && check fail "Unexpected provider/receiver present" || check ok "No content providers or broadcast receivers"
+  # Library components (androidx.startup provider, profile installer receiver) must be
+  # non-exported or protected by a permission
+  comps=$(echo "$mf" | awk '/E: (provider|receiver)/{c=1;n=""} c&&/android:name\(0x01010003\)/{if(n=="")n=$0} /E: (activity|service)/{c=0} c&&n!=""{print n; c=0}' | sed 's/.*Raw: "//;s/")$//;s/^ *//')
+  [ -n "$comps" ] && out "  Library components: $(echo $comps | tr ' ' ',')"
+  unprot=$(echo "$mf" | awk '
+    function flush(){ if(c && !ok) print n; c=0 }
+    /E: (provider|receiver)/{flush(); c=1; ok=0; n=""}
+    /E: (activity|service|application)/{flush()}
+    c && /android:name\(0x01010003\)/ { if(n=="") n=$0 }
+    c && /android:exported\(0x01010010\)=\(type 0x12\)0x0/ { ok=1 }
+    c && /android:permission\(0x01010006\)/ { ok=1 }
+    END{flush()}')
+  [ -z "$unprot" ] && check ok "Providers/receivers are not exported or are permission-protected" || check fail "Unprotected provider/receiver: $unprot"
 
   # Every exported service must be protected by a system bind permission
   svc_unprot=$(echo "$mf" | awk '/E: service/{s=1;p=0;n=""} s&&/android:name\(0x01010003\)/{n=$0} s&&/android:permission\(0x01010006\)/{p=1} s&&/E: (intent-filter|meta-data)/{if(!p)print n; s=0}')
