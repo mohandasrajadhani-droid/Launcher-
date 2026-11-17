@@ -245,7 +245,7 @@ fun HomeItemMenu(
             if (app != null) {
                 MenuRow("Rename", Icons.Filled.Edit) { onRename(app.key); onDismiss() }
                 MenuRow("App info", Icons.Filled.Info) { repo.openInfo(app); onDismiss() }
-                MenuRow("Uninstall", Icons.Filled.Delete) { repo.uninstall(app); onDismiss() }
+                MenuRow("Uninstall…", Icons.Filled.Delete) { repo.uninstall(app); onDismiss() }
             }
         }
         is HomeItem.Folder -> {
@@ -282,7 +282,7 @@ fun DrawerAppMenu(app: AppEntry, act: MainActivity, onDismiss: () -> Unit, onRen
         onDismiss()
     }
     MenuRow("App info", Icons.Filled.Info) { act.repo.openInfo(app); onDismiss() }
-    MenuRow("Uninstall", Icons.Filled.Delete) { act.repo.uninstall(app); onDismiss() }
+    MenuRow("Uninstall…", Icons.Filled.Delete) { act.repo.uninstall(app); onDismiss() }
 }
 
 @Composable

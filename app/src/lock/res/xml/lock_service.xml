@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Minimum-privilege configuration:
+  - packageNames limits events to MS Launcher itself, so no events from other apps are received
+  - canRetrieveWindowContent=false: cannot read any screen or window content
+  - no gesture, key-event or fingerprint capabilities requested
+  The service is only used for GLOBAL_ACTION_LOCK_SCREEN and GLOBAL_ACTION_NOTIFICATIONS.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAnnouncement"
+    android:packageNames="com.ms.launcher"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:isAccessibilityTool="false"
+    android:description="@string/lock_service_desc"
+    android:summary="@string/lock_service_summary"
+    android:notificationTimeout="1000" />

@@ -58,6 +58,7 @@ fun SettingsScreen(act: MainActivity, wallpaperId: String, onWallpaper: (String)
         try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { "" }
     }
     var confirmReset by remember { mutableStateOf(false) }
+    var disclosure by remember { mutableStateOf<String?>(null) }
 
     Surface(Modifier.fillMaxSize(), color = Color(0xFF0E0E10)) {
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
@@ -115,28 +116,55 @@ fun SettingsScreen(act: MainActivity, wallpaperId: String, onWallpaper: (String)
                 SwitchRow("Swipe down for notifications", null, s.swipeDownNotifications) { v ->
                     store.updateSettings { it.copy(swipeDownNotifications = v) }
                 }
-                SwitchRow(
-                    "Double-tap empty space to lock",
-                    if (lockOn) "Permission on" else "Needs the accessibility permission",
-                    s.doubleTapLock
-                ) { v ->
-                    store.updateSettings { it.copy(doubleTapLock = v) }
-                    if (v && !lockOn) openSettings(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                }
-                if (s.doubleTapLock && !lockOn) {
-                    Hint("Accessibility → Installed apps → MS Launcher → turn on. If it's greyed out on Samsung: Settings → Apps → MS Launcher → ⋮ (top right) → Allow restricted settings, then try again.")
-                    OutlinedButton(onClick = { openSettings(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS) }) { Text("Open Accessibility settings") }
+                if (BuildConfig.LOCK_FEATURE) {
+                    SwitchRow(
+                        "Double-tap empty space to lock",
+                        if (!s.doubleTapLock) "Off · optional · uses Accessibility"
+                        else if (lockOn) "On" else "Waiting for you to allow it in Accessibility",
+                        s.doubleTapLock
+                    ) { v ->
+                        if (v) disclosure = "lock"
+                        else {
+                            store.updateSettings { it.copy(doubleTapLock = false) }
+                            setPrivacyComponents(ctx, store.settings)
+                        }
+                    }
+                    if (s.doubleTapLock && !lockOn) {
+                        Hint("Accessibility → Installed apps → MS Launcher – double-tap to lock → On. If it's greyed out on Samsung: Settings → Apps → MS Launcher → ⋮ → Allow restricted settings.")
+                        OutlinedButton(onClick = { openSettings(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS) }) { Text("Open Accessibility settings") }
+                    }
+                } else {
+                    Hint("Double-tap to lock is not included in this edition, so the app needs no Accessibility access.")
                 }
 
-                Section("Notification dots")
-                SwitchRow("Show notification counts on icons", if (dotsOn) "Access granted" else "Needs notification access", s.notificationDots) { v ->
-                    store.updateSettings { it.copy(notificationDots = v) }
-                    if (v && !dotsOn) openSettings(ctx, Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                Section("Notification counts")
+                SwitchRow(
+                    "Show notification counts on icons",
+                    if (!s.notificationDots) "Off · optional · uses notification access"
+                    else if (dotsOn) "On" else "Waiting for you to allow notification access",
+                    s.notificationDots
+                ) { v ->
+                    if (v) disclosure = "dots"
+                    else {
+                        store.updateSettings { it.copy(notificationDots = false) }
+                        setPrivacyComponents(ctx, store.settings)
+                    }
                 }
                 if (s.notificationDots && !dotsOn) {
-                    Hint("Turn on “MS Launcher notification dots”. If it's greyed out: App info → ⋮ → Allow restricted settings.")
-                    OutlinedButton(onClick = { openSettings(ctx, Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) }) { Text("Grant notification access") }
+                    Hint("Turn on “MS Launcher – notification counts”. If it's greyed out: Settings → Apps → MS Launcher → ⋮ → Allow restricted settings.")
+                    OutlinedButton(onClick = { openSettings(ctx, Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) }) { Text("Open notification access settings") }
                 }
+                if (!s.notificationDots && dotsOn) {
+                    Hint("Notification access is still allowed in Android settings but MS Launcher has switched its listener off. You can also remove the access there.")
+                    OutlinedButton(onClick = { openSettings(ctx, Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) }) { Text("Remove notification access") }
+                }
+
+                Section("Privacy")
+                Hint("MS Launcher has no internet permission and sends nothing anywhere. Your layout, hidden apps and app-usage counts stay on this phone only and are excluded from backups.")
+                OutlinedButton(onClick = {
+                    store.clearLaunchCounts()
+                    android.widget.Toast.makeText(ctx, "App usage history cleared", android.widget.Toast.LENGTH_SHORT).show()
+                }) { Text("Clear app usage history (Frequently used)") }
 
                 Section("Hidden apps")
                 if (store.hidden.isEmpty()) {
@@ -162,6 +190,44 @@ fun SettingsScreen(act: MainActivity, wallpaperId: String, onWallpaper: (String)
                 Spacer(Modifier.height(32.dp))
             }
         }
+    }
+
+    // Prominent disclosure shown BEFORE the user is sent to a sensitive Android permission screen
+    disclosure?.let { kind ->
+        val isLock = kind == "lock"
+        AlertDialog(
+            onDismissRequest = { disclosure = null },
+            title = { Text(if (isLock) "Allow Accessibility for double-tap to lock?" else "Allow notification access for counts?") },
+            text = {
+                Text(
+                    if (isLock)
+                        "MS Launcher uses Android's Accessibility service ONLY to:\n" +
+                        "• lock the screen when you double-tap empty space on the home screen\n" +
+                        "• open the notification panel when you swipe down\n\n" +
+                        "It does NOT read your screen, what you type, passwords, OTPs, banking apps or any other app's content. " +
+                        "It is set up to receive no events from other apps. Nothing is stored or sent — the app has no internet access.\n\n" +
+                        "Next, Android will show the Accessibility screen. Turn on “MS Launcher – double-tap to lock”. " +
+                        "You can turn it off any time here."
+                    else
+                        "To show a count on app icons, Android must give MS Launcher notification access.\n\n" +
+                        "MS Launcher uses ONLY the app name and the number of notifications for each app. " +
+                        "It does NOT read, save or send message text, senders, OTPs, passwords or banking details. " +
+                        "Counts are kept in memory only and the app has no internet access.\n\n" +
+                        "Next, Android will show the Notification access screen. Turn on “MS Launcher – notification counts”. " +
+                        "You can turn it off any time here."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    store.updateSettings { if (isLock) it.copy(doubleTapLock = true) else it.copy(notificationDots = true) }
+                    setPrivacyComponents(ctx, store.settings)
+                    if (isLock && !lockOn) openSettings(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    if (!isLock && !dotsOn) openSettings(ctx, Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    disclosure = null
+                }) { Text("Agree & continue") }
+            },
+            dismissButton = { TextButton(onClick = { disclosure = null }) { Text("No thanks") } }
+        )
     }
 
     if (confirmReset) {

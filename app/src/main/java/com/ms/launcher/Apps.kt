@@ -90,14 +90,13 @@ class AppRepository(private val ctx: Context) {
         catch (e: Exception) { toast("Can't open app info") }
     }
 
+    /**
+     * Opens the system App info page, where the user taps Uninstall.
+     * This avoids the REQUEST_DELETE_PACKAGES permission entirely.
+     */
     fun uninstall(app: AppEntry) {
-        try {
-            ctx.startActivity(
-                Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.packageName}"))
-                    .putExtra(Intent.EXTRA_USER, app.user)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        } catch (e: Exception) { toast("Can't uninstall ${app.label}") }
+        openInfo(app)
+        toast("Tap Uninstall to remove ${app.label}")
     }
 
     /** App shortcuts only work while MS Launcher is the default home app. */

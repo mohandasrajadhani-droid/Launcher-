@@ -38,17 +38,29 @@ jobs:
             echo "::warning::KEYSTORE_B64 secret not set - APK is signed with a temporary key and cannot update an existing install"
           fi
 
-      - name: Build release APK
+      - name: Build release APKs (standard + lock editions)
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: gradle assembleRelease --no-daemon
+        run: gradle assembleStandardRelease assembleLockRelease --no-daemon
 
       - name: Remove signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
 
-      - name: Upload APK
+      - name: Security gate (permissions, debuggable, backup, services, network, signature)
+        run: |
+          bash .github/security-check.sh \
+            app/build/outputs/apk/standard/release/app-standard-release.apk \
+            app/build/outputs/apk/lock/release/app-lock-release.apk
+
+      - name: Upload standard edition (recommended)
         uses: actions/upload-artifact@v4
         with:
-          name: MSLauncher-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: MSLauncher-standard-apk
+          path: app/build/outputs/apk/standard/release/*.apk
+
+      - name: Upload lock edition (adds double-tap to lock)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MSLauncher-lock-apk
+          path: app/build/outputs/apk/lock/release/*.apk

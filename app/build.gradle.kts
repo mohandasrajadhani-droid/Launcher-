@@ -12,8 +12,8 @@ android {
         applicationId = "com.ms.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.1"
+        versionCode = 4
+        versionName = "2.2"
     }
 
     // The permanent signing key is NOT in this public repo. GitHub Actions decodes it
@@ -27,6 +27,23 @@ android {
                 keyAlias = System.getenv("KEY_ALIAS") ?: "mslauncher"
                 keyPassword = System.getenv("KEYSTORE_PASSWORD")
             }
+        }
+    }
+
+    // Two editions:
+    //  standard - no accessibility service at all (recommended)
+    //  lock     - adds the optional double-tap-to-lock accessibility service
+    flavorDimensions += "edition"
+    productFlavors {
+        create("standard") {
+            dimension = "edition"
+            isDefault = true
+            buildConfigField("boolean", "LOCK_FEATURE", "false")
+        }
+        create("lock") {
+            dimension = "edition"
+            versionNameSuffix = "-lock"
+            buildConfigField("boolean", "LOCK_FEATURE", "true")
         }
     }
 
@@ -47,6 +64,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

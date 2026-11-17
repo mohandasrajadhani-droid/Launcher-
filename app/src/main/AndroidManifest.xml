@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Normal permissions only. No internet, SMS, contacts, location, storage or install/delete rights. -->
     <!-- Set lock screen wallpaper from the picker -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- Swipe down on home to open the notification panel -->
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
-    <!-- Uninstall apps from the launcher -->
-    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
-    <!-- Needed on Android 11+ to see installed apps and widgets -->
+    <!-- Needed on Android 11+ to list launchable apps and widgets (instead of QUERY_ALL_PACKAGES) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -21,16 +20,20 @@
 
     <application
         android:label="@string/app_name"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@style/Theme.MSLauncher">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:taskAffinity=""
             android:launchMode="singleTask"
             android:stateNotNeeded="true"
             android:clearTaskOnLaunch="true"
-            android:excludeFromRecents="true"
             android:resumeWhilePausing="true"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
@@ -43,9 +46,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Must be exported so Android can deliver "Add to home screen" requests; input is verified in code -->
         <activity
             android:name=".PinShortcutActivity"
             android:exported="true"
+            android:taskAffinity=""
+            android:noHistory="true"
             android:excludeFromRecents="true"
             android:autoRemoveFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
@@ -54,27 +60,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Off by default. Enabled only after the user agrees to the in-app disclosure. -->
         <service
             android:name=".DotService"
+            android:enabled="false"
             android:exported="true"
             android:label="@string/dots_service"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
-        </service>
-
-        <service
-            android:name=".LockService"
-            android:exported="true"
-            android:label="@string/lock_service"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
+            <!-- Android 13+: skip silent and ongoing notifications by default -->
             <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/lock_service" />
+                android:name="android.service.notification.default_filter_types"
+                android:value="conversations|alerting" />
         </service>
     </application>
 </manifest>

@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
         awm = AppWidgetManager.getInstance(this)
         widgetHost = AppWidgetHost(this, HOST_ID)
         repo.la.registerCallback(pkgCallback, Handler(Looper.getMainLooper()))
+        setPrivacyComponents(this, store.settings)
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) { LauncherRoot(this) }

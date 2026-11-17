@@ -312,7 +312,7 @@ fun LauncherRoot(act: MainActivity) {
                             .onGloballyPositioned { gridBounds[page] = it.boundsInRoot() }
                             .pointerInput(s.doubleTapLock) {
                                 detectTapGestures(
-                                    onDoubleTap = if (s.doubleTapLock) ({ _: Offset -> lockScreen(ctx) }) else null,
+                                    onDoubleTap = if (s.doubleTapLock && BuildConfig.LOCK_FEATURE) ({ _: Offset -> lockScreen(ctx) }) else null,
                                     onLongPress = { homeOptions = true }
                                 )
                             }
@@ -381,7 +381,7 @@ fun LauncherRoot(act: MainActivity) {
                 DropZone("Remove", Icons.Filled.Close, removeZone.contains(dragPos),
                     Modifier.weight(1f).onGloballyPositioned { removeZone = it.boundsInRoot() })
                 if (d.item is HomeItem.App) {
-                    DropZone("Uninstall", Icons.Filled.Delete, uninstallZone.contains(dragPos),
+                    DropZone("Uninstall…", Icons.Filled.Delete, uninstallZone.contains(dragPos),
                         Modifier.weight(1f).onGloballyPositioned { uninstallZone = it.boundsInRoot() })
                 }
             }

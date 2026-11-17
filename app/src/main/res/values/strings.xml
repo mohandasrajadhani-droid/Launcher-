@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MS Launcher</string>
-    <string name="dots_service">MS Launcher notification dots</string>
+    <string name="dots_service">MS Launcher – notification counts</string>
     <string name="lock_service">MS Launcher – double-tap to lock</string>
-    <string name="lock_service_desc">Lets MS Launcher lock the screen when you double-tap an empty part of the home screen, and open notifications when you swipe down. It does not read your screen content.</string>
+    <string name="lock_service_summary">Locks the screen when you double-tap empty space on the home screen.</string>
+    <string name="lock_service_desc">MS Launcher uses this service only to lock the screen when you double-tap an empty part of the home screen, and to open the notification panel when you swipe down. It cannot read your screen, the text you type, or other apps\' windows, and it does not collect, store or send any data. You can turn it off any time in Launcher settings.</string>
 </resources>

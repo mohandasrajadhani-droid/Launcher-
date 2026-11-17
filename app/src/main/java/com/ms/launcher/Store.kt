@@ -38,7 +38,7 @@ data class LauncherSettings(
     val dim: Float = 0.10f,
     val swipeDownNotifications: Boolean = true,
     val doubleTapLock: Boolean = false,
-    val notificationDots: Boolean = true,
+    val notificationDots: Boolean = false,   // opt-in only
     val lockLayout: Boolean = false,
     val pages: Int = 2,
 )
@@ -63,7 +63,15 @@ class LauncherStore private constructor(ctx: Context) {
             inst ?: synchronized(this) { inst ?: LauncherStore(ctx).also { inst = it } }
     }
 
-    init { load() }
+    init {
+        load()
+        // v2.2 privacy migration: sensitive features must be re-enabled through the new consent screens
+        if (!prefs.getBoolean("privacy_v22", false)) {
+            settings = settings.copy(notificationDots = false, doubleTapLock = false)
+            prefs.edit().putBoolean("privacy_v22", true).apply()
+            save()
+        }
+    }
 
     // ---------- settings ----------
     fun updateSettings(f: (LauncherSettings) -> LauncherSettings) { settings = f(settings); save() }
@@ -210,6 +218,7 @@ class LauncherStore private constructor(ctx: Context) {
         renames = if (name.isNullOrBlank()) renames - key else renames + (key to name)
         save()
     }
+    fun clearLaunchCounts() { launchCounts = emptyMap(); save() }
     fun recordLaunch(key: String) { launchCounts = launchCounts + (key to ((launchCounts[key] ?: 0) + 1)); save() }
 
     // ---------- widgets ----------
